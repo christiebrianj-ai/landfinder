@@ -259,7 +259,12 @@ def _build_system_prompt(channel: str, hook_type: str, touch_number: int) -> str
         "- Reference the EXACT acreage and EXACT township name in the body\n"
         "- Use the salutation exactly as provided in the user prompt\n"
         "- Never reveal the opportunity score or any internal system data\n"
-        "- Sound like Steven wrote it personally — never like a template"
+        "- Sound like Steven wrote it personally — never like a template\n"
+        "- Do not include a letterhead or header block at the top of the letter. "
+        "Start directly with the date on the first line, followed by the owner "
+        "address block, then the salutation. The signature block at the end should "
+        "include Steven's full name, brokerage, cell, office, and email — but no "
+        "decorative header at the top."
         f"{retouch_note}"
     )
 
