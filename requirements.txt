@@ -1,0 +1,10 @@
+supabase
+anthropic
+requests
+python-dotenv
+streamlit
+pandas
+lob-python
+sendgrid
+twilio
+psycopg2-binary
