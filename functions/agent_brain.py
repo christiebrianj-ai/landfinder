@@ -13,6 +13,7 @@ load_dotenv()
 
 import anthropic
 from functions.db import get_client
+from functions.parcel_scorer import score_parcel
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,27 @@ def agent_decide(parcel_id: str, agent_id: str) -> str:
         logger.error(f"Agent config '{agent_id}' not found.")
         return "wait"
     config = config_result.data[0]
+
+    # [NEW] Check if opportunity score is missing or stale (> 7 days old).
+    # If so, refresh it before making the decision.
+    opp_score = parcel.get("opportunity_score")
+    scored_at_str = parcel.get("scored_at")
+    needs_scoring = (
+        opp_score is None
+        or scored_at_str is None
+        or (datetime.now(timezone.utc) - parse_dt(scored_at_str)).days > 7
+    )
+
+    if needs_scoring:
+        logger.info(f"Refreshing opportunity score for parcel {parcel_id}.")
+        score_result = score_parcel(parcel_id, agent_id)
+        opp_score = score_result["score"]
+        opp_tier = score_result["tier"]
+        opp_reasoning = score_result["reasoning"]
+    else:
+        opp_score = opp_score or 0
+        opp_tier = "high" if opp_score >= 65 else ("medium" if opp_score >= 35 else "low")
+        opp_reasoning = parcel.get("score_reasoning") or ""
 
     # c. Read ALL touchpoints for this parcel, ordered by sent_at ASC
     touch_result = (
@@ -79,7 +101,7 @@ def agent_decide(parcel_id: str, agent_id: str) -> str:
     # f. Count total touches
     total_touches = len(touchpoints)
 
-    # g. System prompt
+    # g. System prompt — includes low-score override rule
     agent_name = config.get("agent_name", agent_id)
     brokerage = config.get("brokerage", "")
     retouch_cadence_days = config.get("retouch_cadence_days", 28)
@@ -99,10 +121,12 @@ def agent_decide(parcel_id: str, agent_id: str) -> str:
         ">= retouch_cadence_days, total_touches < 6\n"
         "- wait: has touchpoints, no response, days_since_last_contact < retouch_cadence_days\n"
         "- escalate_to_agent: owner has responded (response_received = true on any touchpoint)\n"
-        "- skip: total_touches >= 6 with no response"
+        "- skip: total_touches >= 6 with no response\n"
+        "- If opportunity_score < 25: action should be skip regardless of other factors "
+        "— this parcel is not worth pursuing"
     )
 
-    # h. User prompt
+    # h. User prompt — includes opportunity score
     touch_lines = []
     for tp in touchpoints:
         touch_lines.append(
@@ -131,7 +155,9 @@ def agent_decide(parcel_id: str, agent_id: str) -> str:
         f"Touch history:\n{touch_history}\n\n"
         f"Days since last contact: {days_since_last_contact}\n"
         f"Total touches: {total_touches}\n"
-        f"Retouch cadence: {retouch_cadence_days} days"
+        f"Retouch cadence: {retouch_cadence_days} days\n\n"
+        f"Opportunity score: {opp_score}/100 (tier: {opp_tier})\n"
+        f"Score reasoning: {opp_reasoning}"
     )
 
     # i. Call Anthropic API
