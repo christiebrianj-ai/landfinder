@@ -141,6 +141,37 @@ HOOK_DESCRIPTIONS = {
     ),
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Source type instructions
+# ─────────────────────────────────────────────────────────────────────────────
+
+SOURCE_TYPE_INSTRUCTIONS = {
+    "mls_active": (
+        "OPENING ANGLE — MLS ACTIVE LISTING: This owner has already listed their land for "
+        "sale on the MLS. Your first sentence must lead with the fact that you have a "
+        "qualified, motivated buyer actively looking in this township right now. The goal is "
+        "to get the owner to work with Steven specifically rather than their current agent or "
+        "sell without representation. This aligns with the buyer hook above."
+    ),
+    "ccpc_subdivision": (
+        "OPENING ANGLE — CCPC SUBDIVISION (THIS OVERRIDES THE HOOK ABOVE): Disregard the "
+        "buyer angle hook. Your first sentence must reference that you noticed this owner's "
+        "subdivision activity in the Chester County Planning Commission report. Then mention "
+        "that you are working with a builder who has strong interest in purchasing the lots. "
+        "Do NOT mention MLS, active listings, or generic buyer language. The tone should feel "
+        "like Steven did specific research and is reaching out because of what he saw in the "
+        "CCPC report."
+    ),
+    "off_market": (
+        "OPENING ANGLE — OFF MARKET COLD OUTREACH (THIS OVERRIDES THE HOOK ABOVE): Disregard "
+        "the buyer angle hook. Your first sentence must convey that Steven researches land "
+        "ownership throughout Chester County and this specific parcel caught his attention "
+        "because it matches exactly what his buyers are looking for. Make the owner feel this "
+        "is a rare, targeted outreach — not a mass mailing. Do NOT reference any listing, MLS "
+        "activity, or CCPC report. This is purely cold, research-driven contact."
+    ),
+}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -185,9 +216,13 @@ def _is_company(owner_name: str) -> bool:
     return any(flag in name_lower for flag in company_flags)
 
 
-def _build_system_prompt(channel: str, hook_type: str, touch_number: int) -> str:
+def _build_system_prompt(channel: str, hook_type: str, touch_number: int,
+                         source_type: str = "mls_active") -> str:
     today = datetime.now().strftime("%B %d, %Y")
     hook_desc = HOOK_DESCRIPTIONS[hook_type]
+    source_instruction = SOURCE_TYPE_INSTRUCTIONS.get(
+        source_type, SOURCE_TYPE_INSTRUCTIONS["mls_active"]
+    )
 
     if channel == "mail":
         channel_instructions = (
@@ -252,7 +287,9 @@ def _build_system_prompt(channel: str, hook_type: str, touch_number: int) -> str
         "warm but professional, brief sentences, specific property details, never generic.\n\n"
         f"{SAMPLE_LETTERS}\n\n"
         "━━━ DRAFTING INSTRUCTIONS ━━━\n\n"
-        f"Opening hook for this message:\n{hook_desc}\n\n"
+        f"A/B hook style (secondary):\n{hook_desc}\n\n"
+        f"OPENING ANGLE FOR THIS LETTER (primary — follow this above all else):\n"
+        f"{source_instruction}\n\n"
         f"Channel: {channel.upper()}\n"
         f"{channel_instructions}\n\n"
         "Content rules (always follow):\n"
@@ -269,10 +306,30 @@ def _build_system_prompt(channel: str, hook_type: str, touch_number: int) -> str
     )
 
 
+_SOURCE_TYPE_OPENERS = {
+    "mls_active": (
+        "FIRST SENTENCE MUST: mention you have a qualified, motivated buyer actively "
+        "looking for land in this township right now."
+    ),
+    "ccpc_subdivision": (
+        "FIRST SENTENCE MUST: reference that you noticed this owner's subdivision activity "
+        "in the Chester County Planning Commission report — NOT a buyer looking in the township. "
+        "Say you are working with a builder who has interest in the lots."
+    ),
+    "off_market": (
+        "FIRST SENTENCE MUST: say that you research land ownership in Chester County and this "
+        "specific parcel matched what your buyers are looking for — do NOT reference any listing, "
+        "MLS, or CCPC report. Make it feel targeted and specific, not a mass mailing."
+    ),
+}
+
+
 def _build_user_prompt(parcel: dict, owner_name: str, hook_type: str,
                        version: str, touch_number: int) -> str:
     salutation = _owner_salutation(owner_name)
     is_company = _is_company(owner_name)
+    source_type = parcel.get("source_type") or "mls_active"
+    opener_directive = _SOURCE_TYPE_OPENERS.get(source_type, _SOURCE_TYPE_OPENERS["mls_active"])
 
     company_note = (
         "\nIMPORTANT: This owner is a company/LLC. "
@@ -288,12 +345,14 @@ def _build_user_prompt(parcel: dict, owner_name: str, hook_type: str,
         f"Lot size: {parcel.get('lot_size_acres')} acres\n"
         f"Township: {parcel.get('township')}\n"
         f"County: {parcel.get('county')}\n"
+        f"Source type: {source_type}\n"
         f"Opportunity score: {parcel.get('opportunity_score', 'N/A')}/100\n"
         f"Score context: {parcel.get('score_reasoning', 'N/A')}\n"
         f"Version: {version} | Hook: {hook_type}\n"
         f"Touch number: {touch_number}\n"
         f"Salutation to use: {salutation}"
         f"{company_note}\n\n"
+        f"OPENING DIRECTIVE: {opener_directive}\n\n"
         "Please draft the outreach message now."
     )
 
@@ -355,9 +414,12 @@ def generate_outreach(parcel_id: str, agent_id: str, channel: str,
         # d. Determine hook_type from version
         hook_type = HOOK_TYPES.get(version, "buyer_angle")
 
+        # e. Read source_type
+        source_type = parcel.get("source_type") or "mls_active"
+
         # f. Build prompts
         owner_name = parcel.get("owner_name") or "Owner"
-        system_prompt = _build_system_prompt(channel, hook_type, touch_number)
+        system_prompt = _build_system_prompt(channel, hook_type, touch_number, source_type)
         user_prompt = _build_user_prompt(parcel, owner_name, hook_type, version, touch_number)
 
         # h. Call Anthropic API
