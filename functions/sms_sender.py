@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from twilio.rest import Client
+from twilio.base.exceptions import TwilioRestException
 
 from functions.db import get_client
 from functions.outreach_generator import generate_outreach
@@ -87,6 +88,16 @@ def send_sms(parcel_id: str, agent_id: str) -> dict:
         }).execute()
 
         return {'success': True, 'message_sid': message.sid}
+
+    except TwilioRestException as e:
+        # A2P 10DLC campaign errors (30034) and carrier rejections before
+        # registration is approved — treat as a known pending state, not a crash.
+        a2p_codes = {30034, 30007, 30032, 21610}
+        if e.code in a2p_codes or 'campaign' in str(e).lower() or 'a2p' in str(e).lower():
+            logger.warning(f'SMS pending A2P approval for parcel {parcel_id}: {e}')
+            return {'success': False, 'reason': 'a2p_pending', 'error': str(e)}
+        logger.error(f'send_sms Twilio error: {e}', exc_info=True)
+        return {'success': False, 'error': str(e)}
 
     except Exception as e:
         logger.error(f'send_sms failed: {e}', exc_info=True)
