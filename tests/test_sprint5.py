@@ -61,7 +61,7 @@ def run_tests():
         'owner_mailing_address': '456 Owner Lane, Philadelphia PA 19103',
         'township': 'Birmingham',
         'lot_size_acres': 5.2,
-        'owner_email': 'brianmchristie8@gmail.com',
+        'owner_email': 'christiebrianj@gmail.com',
         'owner_phone': VERIFIED_PHONE,
         'status': 'approved',
         'source_type': 'mls_active',
